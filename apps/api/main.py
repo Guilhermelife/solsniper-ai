@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 
 from apps.api.src.health import router as health_router
-from apps.api.src.config import settings
+from apps.api.src.routes.tokens import router as token_router
+from apps.common.config import settings
 
 
 app = FastAPI(
@@ -11,6 +12,7 @@ app = FastAPI(
 
 
 app.include_router(health_router)
+app.include_router(token_router)
 
 
 @app.get("/")
