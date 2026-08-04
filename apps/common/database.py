@@ -1,10 +1,11 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-DATABASE_URL = (
-    "postgresql+psycopg://"
-    "solsniper:solsniper_password"
-    "@localhost:5432/solsniper_db"
+import os
+
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+psycopg://solsniper:solsniper_password@localhost:5432/solsniper_db"
 )
 
 

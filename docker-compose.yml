@@ -12,5 +12,45 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  api:
+    build: .
+    container_name: solsniper-api
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql+psycopg://solsniper:solsniper_password@postgres:5432/solsniper_db
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    command: uvicorn apps.api.main:app --host 0.0.0.0 --port 8000
+    volumes:
+      - ./logs:/app/logs
+
+  worker:
+    build: .
+    container_name: solsniper-worker
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql+psycopg://solsniper:solsniper_password@postgres:5432/solsniper_db
+    env_file:
+      - .env
+    command: python -m apps.worker.main
+    volumes:
+      - ./logs:/app/logs
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: solsniper_frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
 volumes:
   postgres_data:
