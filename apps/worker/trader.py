@@ -92,9 +92,9 @@ class PaperTrader:
         
         quantity = effective_amount_usd / entry_price if entry_price > 0 else 0
         
-        stop_loss = entry_price * (1 + (sys_settings.stop_loss_pct / 100.0))
+        stop_loss = entry_price * (1 - (abs(sys_settings.stop_loss_pct) / 100.0))
         highest_price = entry_price
-        trailing_stop_price = highest_price * (1 - (sys_settings.trailing_stop_pct / 100.0))
+        trailing_stop_price = highest_price * (1 - (abs(sys_settings.trailing_stop_pct) / 100.0))
         
         position = Position(
             token_address=token.get("address"),
@@ -103,7 +103,7 @@ class PaperTrader:
             amount_usd=amount_usd,
             quantity=quantity,
             status="OPEN",
-            target_profit=entry_price * (1 + (sys_settings.paper_default_take_profit_pct / 100.0)),
+            target_profit=entry_price * (1 + (abs(sys_settings.paper_default_take_profit_pct) / 100.0)),
             stop_loss=stop_loss,
             highest_price=highest_price,
             lowest_price=entry_price,
@@ -157,10 +157,8 @@ class PaperTrader:
         else:
             self.wallet.total_loss += abs(profit_loss)
             
+        self.db.flush()
         winning_trades = self.db.query(Position).filter(Position.profit_loss > 0, Position.status == "CLOSED").count()
-        if profit_loss > 0:
-            winning_trades += 1
-            
         self.wallet.win_rate = (winning_trades / self.wallet.total_trades) * 100.0 if self.wallet.total_trades > 0 else 0.0
         
         self.db.commit()
@@ -207,7 +205,7 @@ class PaperTrader:
                 
         # 3. Dynamic Trailing (Only if we crossed the min_profit threshold)
         if sys_settings.dynamic_trailing_stop and position.max_roi >= sys_settings.min_profit_before_trailing_pct:
-            new_trailing_stop = position.highest_price * (1 - (sys_settings.trailing_stop_pct / 100.0))
+            new_trailing_stop = position.highest_price * (1 - (abs(sys_settings.trailing_stop_pct) / 100.0))
             if not position.trailing_stop_price or new_trailing_stop > position.trailing_stop_price:
                 position.trailing_stop_price = new_trailing_stop
                 

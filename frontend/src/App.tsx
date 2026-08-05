@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Overview from './pages/Overview'
 import LiveMarket from './pages/LiveMarket'
 import Signals from './pages/Signals'
+import LiveSignals from './pages/LiveSignals'
 import OpenPositions from './pages/OpenPositions'
 import ClosedPositions from './pages/ClosedPositions'
 import Analytics from './pages/Analytics'
@@ -20,7 +21,8 @@ function App() {
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<Overview />} />
           <Route path="/market" element={<LiveMarket />} />
-          <Route path="/signals" element={<Signals />} />
+          <Route path="/signals/live" element={<LiveSignals />} />
+          <Route path="/signals/history" element={<Signals />} />
           <Route path="/positions/open" element={<OpenPositions />} />
           <Route path="/positions/closed" element={<ClosedPositions />} />
           <Route path="/analytics" element={<Analytics />} />

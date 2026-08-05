@@ -28,22 +28,85 @@ const fetchHealth = async () => {
   return data
 }
 
+const fetchBadges = async () => {
+  const { data } = await axios.get(`${API_BASE}/system/badges`)
+  return data
+}
+
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { data: health, isError } = useQuery({
     queryKey: ['health'],
     queryFn: fetchHealth,
   })
 
+  const { data: badges } = useQuery({
+    queryKey: ['badges'],
+    queryFn: fetchBadges,
+    refetchInterval: 3000, // Poll every 3 seconds
+  })
+
+  // Open Positions Badge
+  let openPositionsBadge = null
+  if (badges) {
+    const { open_positions, max_open_positions } = badges
+    let colorClass = 'bg-success/20 text-success border border-success/30'
+    if (open_positions > 0) {
+      if (open_positions >= max_open_positions) {
+        colorClass = 'bg-danger/20 text-danger border border-danger/30 animate-pulse'
+      } else if (open_positions >= max_open_positions * 0.8) {
+        colorClass = 'bg-warning/20 text-warning border border-warning/30'
+      } else {
+        colorClass = 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+      }
+    }
+    openPositionsBadge = (
+      <span className={cn("ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md transition-colors", colorClass)}>
+        {open_positions}
+      </span>
+    )
+  }
+
+  // Live Market Badge
+  let marketBadge = null
+  if (badges?.scanned_tokens > 0) {
+    marketBadge = (
+      <span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 border border-slate-700">
+        {badges.scanned_tokens}
+      </span>
+    )
+  }
+
+  // Signals Badge
+  let signalsBadge = null
+  if (badges?.pending_signals > 0) {
+    signalsBadge = (
+      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-400 border border-purple-500/30 animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.4)]">
+        {badges.pending_signals}
+      </span>
+    )
+  }
+
+  // Logs Badge
+  let logsBadge = null
+  if (badges?.error_warnings > 0) {
+    logsBadge = (
+      <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-md bg-orange-500/20 text-orange-400 border border-orange-500/30">
+        {badges.error_warnings}
+      </span>
+    )
+  }
+
   const navItems = [
     { name: 'Overview', path: '/overview', icon: LayoutDashboard },
-    { name: 'Live Market', path: '/market', icon: Activity },
-    { name: 'Signals', path: '/signals', icon: Radio },
-    { name: 'Open Positions', path: '/positions/open', icon: Briefcase },
+    { name: 'Live Market', path: '/market', icon: Activity, badge: marketBadge },
+    { name: 'Live Radar', path: '/signals/live', icon: Radio },
+    { name: 'Signal History', path: '/signals/history', icon: History, badge: signalsBadge },
+    { name: 'Open Positions', path: '/positions/open', icon: Briefcase, badge: openPositionsBadge },
     { name: 'Closed Positions', path: '/positions/closed', icon: History },
     { name: 'Analytics', path: '/analytics', icon: LineChart },
     { name: 'Strategy Readiness', path: '/readiness', icon: ShieldCheck },
     { name: 'Configuration', path: '/config', icon: Settings },
-    { name: 'Logs', path: '/logs', icon: TerminalSquare },
+    { name: 'Logs', path: '/logs', icon: TerminalSquare, badge: logsBadge },
     { name: 'System', path: '/system', icon: Cpu },
   ]
 
@@ -68,14 +131,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 key={item.path}
                 to={item.path}
                 className={({ isActive }) => cn(
-                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group",
                   isActive 
                     ? "bg-primary/10 text-primary" 
                     : "text-slate-400 hover:bg-slate-800/50 hover:text-slate-200"
                 )}
               >
-                <Icon className="w-5 h-5" />
+                <Icon className={cn("w-5 h-5", item.badge ? "group-hover:scale-110 transition-transform" : "")} />
                 {item.name}
+                {item.badge}
               </NavLink>
             )
           })}

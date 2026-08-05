@@ -16,3 +16,16 @@ def get_latest_scan():
         return {"tokens": tokens}
     except Exception as e:
         return {"tokens": [], "error": str(e)}
+
+@router.get("/live-signals")
+def get_live_signals():
+    path = "logs/live_signals.json"
+    if not os.path.exists(path):
+        return {"signals": []}
+        
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            signals = json.load(f)
+        return {"signals": signals}
+    except Exception as e:
+        return {"signals": [], "error": str(e)}

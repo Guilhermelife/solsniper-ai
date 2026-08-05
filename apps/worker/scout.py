@@ -47,11 +47,11 @@ def scan_tokens(sys_settings=None):
 
                 import datetime
 
-                created = datetime.datetime.fromtimestamp(
+                created = datetime.datetime.utcfromtimestamp(
                     pair["pairCreatedAt"] / 1000
                 )
 
-                now = datetime.datetime.now()
+                now = datetime.datetime.utcnow()
 
                 age_minutes = (
                     now - created
