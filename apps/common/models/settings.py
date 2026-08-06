@@ -11,12 +11,12 @@ class SystemSettings(Base):
     
     # Portfolio & Position Sizing
     position_size_mode: Mapped[str] = mapped_column(String, default="FIXED_USD") # FIXED_USD, PERCENTAGE, RISK_BASED, KELLY, AI_WEIGHTED
-    default_position_size: Mapped[float] = mapped_column(Float, default=20.0)
+    default_position_size: Mapped[float] = mapped_column(Float, default=15.0)
     wallet_allocation_pct: Mapped[float] = mapped_column(Float, default=10.0)
     risk_per_trade_pct: Mapped[float] = mapped_column(Float, default=2.0)
     kelly_multiplier: Mapped[float] = mapped_column(Float, default=0.5)
-    max_open_positions: Mapped[int] = mapped_column(Integer, default=5)
-    max_wallet_exposure_pct: Mapped[float] = mapped_column(Float, default=80.0)
+    max_open_positions: Mapped[int] = mapped_column(Integer, default=10)
+    max_wallet_exposure_pct: Mapped[float] = mapped_column(Float, default=70.0)
     
     position_replacement_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     replacement_threshold_pct: Mapped[float] = mapped_column(Float, default=-10.0)
@@ -24,32 +24,32 @@ class SystemSettings(Base):
     max_positions_per_token: Mapped[int] = mapped_column(Integer, default=1)
     
     # Entry Filters
-    min_ai_score: Mapped[float] = mapped_column(Float, default=90.0)
-    min_priority_score: Mapped[float] = mapped_column(Float, default=80.0)
+    min_ai_score: Mapped[float] = mapped_column(Float, default=65.0)
+    min_priority_score: Mapped[float] = mapped_column(Float, default=50.0)
     min_freshness_score: Mapped[float] = mapped_column(Float, default=30.0)
     min_liquidity: Mapped[float] = mapped_column(Float, default=1000.0)
     min_volume: Mapped[float] = mapped_column(Float, default=5000.0)
     min_market_cap: Mapped[float] = mapped_column(Float, default=5000.0)
-    max_market_cap: Mapped[float] = mapped_column(Float, default=500000.0)
-    min_buy_sell_ratio: Mapped[float] = mapped_column(Float, default=1.5)
+    max_market_cap: Mapped[float] = mapped_column(Float, default=2000000.0)
+    min_buy_sell_ratio: Mapped[float] = mapped_column(Float, default=1.0)
     min_momentum: Mapped[float] = mapped_column(Float, default=10.0)
     max_token_age_minutes: Mapped[int] = mapped_column(Integer, default=1440)
     allowed_dexes: Mapped[str] = mapped_column(String, default="raydium,pumpfun,meteora,orca,pumpswap")
     
     # Exit Strategy
-    trailing_stop_pct: Mapped[float] = mapped_column(Float, default=15.0)
-    stop_loss_pct: Mapped[float] = mapped_column(Float, default=-20.0)
-    break_even_trigger_pct: Mapped[float] = mapped_column(Float, default=20.0)
+    trailing_stop_pct: Mapped[float] = mapped_column(Float, default=8.0)
+    stop_loss_pct: Mapped[float] = mapped_column(Float, default=-10.0)
+    break_even_trigger_pct: Mapped[float] = mapped_column(Float, default=5.0)
     dynamic_trailing_stop: Mapped[bool] = mapped_column(Boolean, default=True)
-    min_profit_before_trailing_pct: Mapped[float] = mapped_column(Float, default=10.0)
+    min_profit_before_trailing_pct: Mapped[float] = mapped_column(Float, default=3.0)
     trend_exit_sensitivity: Mapped[float] = mapped_column(Float, default=5.0)
     momentum_exit_threshold: Mapped[float] = mapped_column(Float, default=-5.0)
     
     # Re-Entry
     reentry_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    reentry_cooldown_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    reentry_cooldown_minutes: Mapped[int] = mapped_column(Integer, default=30)
     max_reentries: Mapped[int] = mapped_column(Integer, default=3)
-    pullback_pct: Mapped[float] = mapped_column(Float, default=-15.0)
+    pullback_pct: Mapped[float] = mapped_column(Float, default=-10.0)
     breakout_confirmation: Mapped[bool] = mapped_column(Boolean, default=True)
     
     # Scanner

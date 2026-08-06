@@ -206,18 +206,24 @@ class PaperTrader:
         # 3. Dynamic Trailing (Only if we crossed the min_profit threshold)
         if sys_settings.dynamic_trailing_stop and position.max_roi >= sys_settings.min_profit_before_trailing_pct:
             new_trailing_stop = position.highest_price * (1 - (abs(sys_settings.trailing_stop_pct) / 100.0))
-            if not position.trailing_stop_price or new_trailing_stop > position.trailing_stop_price:
-                position.trailing_stop_price = new_trailing_stop
+            position.trailing_stop_price = new_trailing_stop
                 
         self.db.commit()
             
         # Exit Conditions
         
-        # 1. Momentum Exit
+        # 0. Take Profit Hit
+        if position.target_profit and current_price >= position.target_profit:
+            execution_price = min(current_price, position.target_profit * (1 + (sys_settings.paper_slippage_pct/100.0)))
+            return self.close_position(position, execution_price, sys_settings, exit_reason=f"Take Profit Hit ({((current_price - position.entry_price)/position.entry_price)*100:.1f}%)")
+        
+        # 1. Momentum Exit (Only if in profit)
         price_change_5m = float(token.get("price_change_5m", 0))
         if sys_settings.momentum_exit_threshold and price_change_5m <= sys_settings.momentum_exit_threshold:
-            execution_price = max(current_price, current_price * (1 - (sys_settings.paper_slippage_pct/100.0)))
-            return self.close_position(position, execution_price, sys_settings, exit_reason=f"Momentum Exit ({price_change_5m:.1f}%)")
+            # Only close if we're in profit (at least +5%)
+            if current_roi >= 5.0:
+                execution_price = max(current_price, current_price * (1 - (sys_settings.paper_slippage_pct/100.0)))
+                return self.close_position(position, execution_price, sys_settings, exit_reason=f"Momentum Exit ({price_change_5m:.1f}%, ROI: {current_roi:.1f}%)")
 
         # 2. Trailing Stop Hit
         if position.trailing_stop_price and current_price <= position.trailing_stop_price:
