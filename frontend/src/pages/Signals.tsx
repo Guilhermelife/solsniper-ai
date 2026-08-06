@@ -1,40 +1,58 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 import { Search, ExternalLink, ChevronLeft, ChevronRight, Info } from 'lucide-react'
-import { format } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 
 const API_BASE = '/api'
 const ITEMS_PER_PAGE = 20
+
+// Map confirmation_status to badge styling
+const getStatusBadge = (status: string | undefined | null) => {
+  const s = status || 'DETECTED'
+  if (['OPEN', 'BUYING'].includes(s)) {
+    return { cls: 'bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse', label: s }
+  }
+  if (['REJECTED', 'EXPIRED'].includes(s)) {
+    return { cls: 'bg-danger/10 text-danger border border-danger/20', label: s }
+  }
+  if (s === 'WATCHING') {
+    return { cls: 'bg-warning/10 text-warning border border-warning/20', label: 'WATCHING' }
+  }
+  if (s === 'DETECTED') {
+    return { cls: 'bg-slate-800 text-slate-400 border border-slate-700', label: 'DETECTED' }
+  }
+  // Generic closed (is_win determines color — not available here from signal, so use neutral)
+  return { cls: 'bg-slate-700/50 text-slate-300 border border-slate-600', label: s }
+}
 
 export default function Signals() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('ALL')
   const [currentPage, setCurrentPage] = useState(1)
-  
+
   const { data, isLoading } = useQuery({
     queryKey: ['signals'],
     queryFn: async () => (await axios.get(`${API_BASE}/analytics/signals`)).data,
-    refetchInterval: 10000 // auto-refresh every 10s
+    refetchInterval: 10000
   })
 
   const signals = data?.signals || []
-  
+
   const filtered = useMemo(() => {
     return signals.filter((s: any) => {
       if (filter !== 'ALL' && s.decision !== filter) return false
       if (!search) return true
-      return s.symbol?.toLowerCase().includes(search.toLowerCase()) || 
+      return s.symbol?.toLowerCase().includes(search.toLowerCase()) ||
              s.token_address?.toLowerCase().includes(search.toLowerCase())
     })
   }, [signals, filter, search])
 
-  // Reset page when filter/search changes
-  useMemo(() => {
+  // FIX-09: useEffect for side effects instead of useMemo
+  useEffect(() => {
     setCurrentPage(1)
   }, [filter, search])
 
-  // Pagination logic
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
   const paginatedSignals = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE
@@ -45,10 +63,10 @@ export default function Signals() {
     <div className="space-y-6 flex flex-col h-full">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold tracking-tight text-white">Signals History</h1>
-        
+
         <div className="flex items-center gap-3">
-          <select 
-            value={filter} 
+          <select
+            value={filter}
             onChange={e => setFilter(e.target.value)}
             className="bg-surface border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
           >
@@ -89,89 +107,93 @@ export default function Signals() {
               ) : paginatedSignals.length === 0 ? (
                 <tr><td colSpan={6} className="px-6 py-8 text-center text-slate-500">No signals found.</td></tr>
               ) : (
-                paginatedSignals.map((sig: any, i: number) => (
-                  <tr key={i} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-6 py-4 text-slate-400 whitespace-nowrap">
-                      <div>{format(new Date(sig.created_at), 'yyyy-MM-dd HH:mm:ss')}</div>
-                      {sig.price_usd > 0 && (
-                        <div className="text-xs text-slate-500 mt-1">
-                          Entry: ${sig.price_usd.toFixed(6)}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-slate-200">{sig.symbol || 'Unknown'}</div>
-                      <a
-                        href={`https://solscan.io/token/${sig.token_address}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-slate-500 font-mono mt-1 flex items-center gap-1 hover:text-primary transition-colors group"
-                        title="View on Solscan"
-                      >
-                        {sig.token_address.slice(0, 8)}...{sig.token_address.slice(-6)}
-                        <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </a>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                        sig.decision === 'BUY_SIGNAL' ? 'bg-success/10 text-success border border-success/20' : 
-                        sig.decision === 'WATCH' ? 'bg-warning/10 text-warning border border-warning/20' : 
-                        'bg-slate-800 text-slate-400 border border-slate-700'
-                      }`}>
-                        {sig.decision}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {sig.decision === 'BUY_SIGNAL' ? (
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-                          ['OPEN', 'CLOSED_WIN'].includes(sig.confirmation_status) ? 'bg-success/10 text-success border border-success/20' : 
-                          ['REJECTED', 'CLOSED_LOSS', 'EXPIRED'].includes(sig.confirmation_status) ? 'bg-danger/10 text-danger border border-danger/20' : 
-                          sig.confirmation_status === 'BUYING' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20 animate-pulse' :
-                          'bg-warning/10 text-warning border border-warning/20'
-                        }`}>
-                          {sig.confirmation_status || 'DETECTED'}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">-</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className={`font-bold ${sig.ai_score >= 80 ? 'text-success' : sig.ai_score >= 50 ? 'text-warning' : 'text-danger'}`}>
-                        {sig.ai_score ? sig.ai_score.toFixed(1) : '-'}
-                      </div>
-                      {(sig.priority_score > 0 || sig.freshness_score > 0) && (
-                        <div className="text-xs text-slate-500 mt-1">
-                          Pri: {sig.priority_score?.toFixed(1) || 0}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 max-w-xs group relative">
-                      <div className="truncate flex items-center gap-2">
-                        <span>{sig.reason}</span>
-                        {sig.reason?.length > 40 && (
-                          <div className="relative inline-block cursor-help group/tooltip">
-                            <Info className="w-4 h-4 text-slate-500 hover:text-slate-300" />
-                            <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block w-64 p-2 bg-slate-800 text-slate-200 text-xs rounded-lg shadow-xl border border-slate-700 z-10 whitespace-normal">
-                              {sig.reason}
-                            </div>
+                // FIX-10: Use sig.id as key instead of array index to prevent flicker on pagination
+                paginatedSignals.map((sig: any) => {
+                  const badge = getStatusBadge(sig.confirmation_status)
+                  return (
+                    <tr key={sig.id} className="hover:bg-slate-800/30 transition-colors">
+                      <td className="px-6 py-4 text-slate-400 whitespace-nowrap">
+                        {/* FIX-30: Append 'Z' to treat timestamp as UTC explicitly, avoiding browser timezone ambiguity */}
+                        <div>{sig.created_at ? format(parseISO(sig.created_at.endsWith('Z') ? sig.created_at : sig.created_at + 'Z'), 'yyyy-MM-dd HH:mm') + ' UTC' : '—'}</div>
+                        {sig.price_usd > 0 && (
+                          <div className="text-xs text-slate-500 mt-1">
+                            Entry: ${sig.price_usd.toFixed(6)}
                           </div>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-200">{sig.symbol || 'Unknown'}</div>
+                        {/* FIX-11: Null check before slicing token_address */}
+                        {sig.token_address && (
+                          <a
+                            href={`https://solscan.io/token/${sig.token_address}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-slate-500 font-mono mt-1 flex items-center gap-1 hover:text-primary transition-colors group"
+                            title="View on Solscan"
+                          >
+                            {sig.token_address.slice(0, 8)}...{sig.token_address.slice(-6)}
+                            <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </a>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
+                          sig.decision === 'BUY_SIGNAL' ? 'bg-success/10 text-success border border-success/20' :
+                          sig.decision === 'WATCH' ? 'bg-warning/10 text-warning border border-warning/20' :
+                          'bg-slate-800 text-slate-400 border border-slate-700'
+                        }`}>
+                          {sig.decision}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        {sig.decision === 'BUY_SIGNAL' ? (
+                          // FIX-03: Use real statuses from the HFT pipeline
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className={`font-bold ${sig.ai_score >= 80 ? 'text-success' : sig.ai_score >= 50 ? 'text-warning' : 'text-danger'}`}>
+                          {sig.ai_score != null ? sig.ai_score.toFixed(1) : '—'}
+                        </div>
+                        {sig.priority_score > 0 && (
+                          <div className="text-xs text-slate-500 mt-1">
+                            Pri: {sig.priority_score?.toFixed(1)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-slate-400 max-w-xs group relative">
+                        <div className="truncate flex items-center gap-2">
+                          <span>{sig.reason}</span>
+                          {sig.reason?.length > 40 && (
+                            <div className="relative inline-block cursor-help group/tooltip">
+                              <Info className="w-4 h-4 text-slate-500 hover:text-slate-300" />
+                              <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover/tooltip:block w-64 p-2 bg-slate-800 text-slate-200 text-xs rounded-lg shadow-xl border border-slate-700 z-10 whitespace-normal">
+                                {sig.reason}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
         </div>
-        
+
         {/* Pagination Controls */}
         <div className="border-t border-slate-700/50 p-4 flex items-center justify-between text-sm text-slate-400">
           <div>
             Showing <span className="text-slate-200 font-medium">{filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to <span className="text-slate-200 font-medium">{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}</span> of <span className="text-slate-200 font-medium">{filtered.length}</span> results
           </div>
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
               disabled={currentPage === 1}
               className="p-1 rounded hover:bg-slate-800 disabled:opacity-50 disabled:hover:bg-transparent transition-colors text-slate-300"
@@ -181,7 +203,7 @@ export default function Signals() {
             <div className="px-3 py-1 bg-slate-800/50 rounded-md font-medium text-slate-300">
               Page {currentPage} of {totalPages}
             </div>
-            <button 
+            <button
               onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
               className="p-1 rounded hover:bg-slate-800 disabled:opacity-50 disabled:hover:bg-transparent transition-colors text-slate-300"

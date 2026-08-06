@@ -1,7 +1,10 @@
+import datetime
 import time
 
 from apps.common.clients.dexscreener import DexScreenerClient
 
+
+# FIX-13: Import moved to top of file (was inside for loop - bad practice)
 
 def scan_tokens(sys_settings=None):
 
@@ -12,12 +15,19 @@ def scan_tokens(sys_settings=None):
     try:
 
         profiles = client.get_latest_pairs()
-        addresses = [p["tokenAddress"] for p in profiles if p.get("chainId") == "solana"]
-        
+
+        # FIX-13: Deduplicate addresses before chunking to avoid wasting chunk capacity
+        seen = set()
+        addresses = []
+        for p in profiles:
+            if p.get("chainId") == "solana" and p["tokenAddress"] not in seen:
+                seen.add(p["tokenAddress"])
+                addresses.append(p["tokenAddress"])
+
         tokens = []
         if not addresses:
             return tokens
-            
+
         limit = sys_settings.max_tokens_per_scan if sys_settings and sys_settings.max_tokens_per_scan else 30
         chunk = ",".join(addresses[:limit])
         data = client.get_token_pairs_v2(chunk)
@@ -44,9 +54,6 @@ def scan_tokens(sys_settings=None):
             age_minutes = 999999
 
             if pair.get("pairCreatedAt"):
-
-                import datetime
-
                 created = datetime.datetime.utcfromtimestamp(
                     pair["pairCreatedAt"] / 1000
                 )
@@ -68,7 +75,7 @@ def scan_tokens(sys_settings=None):
                 if w.get("url"):
                     website = w.get("url")
                     break
-            
+
             for s in info.get("socials", []):
                 if s.get("type") == "twitter":
                     twitter = s.get("url")
@@ -108,11 +115,12 @@ def scan_tokens(sys_settings=None):
                 "telegram": telegram,
                 "image": image,
                 "description": None,
-                "buys": txns.get("h1", {}).get("buys", 0),
-                "sells": txns.get("h1", {}).get("sells", 0),
-                "price_change": float(price_change.get("h1") or 0)
+                # buys/sells are explicitly h1 — documented clearly
+                "buys": txns.get("h1", {}).get("buys", 0),    # 1h buy count
+                "sells": txns.get("h1", {}).get("sells", 0),  # 1h sell count
+                "price_change": float(price_change.get("h1") or 0)  # 1h price change
             }
-            
+
             if address not in best_tokens or liquidity > best_tokens[address]["liquidity"]:
                 best_tokens[address] = token_data
 
@@ -137,7 +145,7 @@ def run_scout():
 
             from apps.worker.analyzer import analyze_token
 
-            result = analyze_token(token)
+            result = analyze_token(token, None)
 
             print("\n📊 Análise")
             print("====================")

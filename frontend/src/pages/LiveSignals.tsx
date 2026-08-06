@@ -1,24 +1,30 @@
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
-import { Activity, Zap, Clock, AlertTriangle } from 'lucide-react'
+import { Activity, Zap, Clock, AlertTriangle, WifiOff } from 'lucide-react'
 
 const API_BASE = '/api'
 
 export default function LiveSignals() {
-  const { data: rawData, isLoading, error } = useQuery({
+  const { data: rawData, isLoading, error, dataUpdatedAt } = useQuery({
     queryKey: ['live-signals'],
     queryFn: async () => {
       const res = await axios.get(`${API_BASE}/market/live-signals`)
       return res.data
     },
-    refetchInterval: 3000
+    refetchInterval: 3000,
+    // FIX-28: staleTime prevents unnecessary re-renders when data hasn't changed
+    staleTime: 2000
   })
 
   const signals = rawData?.signals || []
 
+  // FIX-29: Determine if live sync is actually fresh (data updated within last 10s)
+  const isLive = dataUpdatedAt > 0 && (Date.now() - dataUpdatedAt) < 10000
+
   // Helpers
-  const formatCurrency = (val: number) => {
-    if (!val) return '$0.00'
+  // FIX-27: Return 'N/A' for undefined/null instead of '$0.00'
+  const formatCurrency = (val: number | undefined | null) => {
+    if (val == null || val === 0) return 'N/A'
     if (val >= 1e9) return `$${(val / 1e9).toFixed(2)}B`
     if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`
     if (val >= 1e3) return `$${(val / 1e3).toFixed(2)}K`
@@ -26,7 +32,7 @@ export default function LiveSignals() {
     return `$${val.toFixed(2)}`
   }
 
-  const formatAge = (mins: number) => {
+  const formatAge = (mins: number | undefined | null) => {
     if (!mins) return 'Unknown'
     if (mins < 60) return `${Math.floor(mins)}m`
     if (mins < 1440) return `${Math.floor(mins / 60)}h ${Math.floor(mins % 60)}m`
@@ -62,10 +68,20 @@ export default function LiveSignals() {
           </h1>
           <p className="text-slate-400 text-sm mt-1">Real-time analysis output directly from the AI brain (bypassing database latency).</p>
         </div>
-        
-        <div className="flex items-center gap-2 text-xs font-medium bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-700">
-          <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
-          <span className="text-slate-300">Live Sync</span>
+
+        {/* FIX-29: Live Sync badge shows real status — green only when fresh data */}
+        <div className={`flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-full border ${isLive ? 'bg-slate-800/50 border-slate-700' : 'bg-danger/10 border-danger/20'}`}>
+          {isLive ? (
+            <>
+              <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+              <span className="text-slate-300">Live Sync</span>
+            </>
+          ) : (
+            <>
+              <WifiOff className="w-3 h-3 text-danger" />
+              <span className="text-danger">Worker Offline</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -140,8 +156,9 @@ export default function LiveSignals() {
                         </td>
                         <td className="p-4 text-right">
                           <div className="text-white font-medium">{formatCurrency(token.price_usd)}</div>
-                          <div className={`text-xs ${token.price_change_5m >= 0 ? 'text-success' : 'text-danger'}`}>
-                            {token.price_change_5m >= 0 ? '+' : ''}{token.price_change_5m?.toFixed(2) || 0}% (5m)
+                          <div className={`text-xs ${(token.price_change_5m ?? 0) >= 0 ? 'text-success' : 'text-danger'}`}>
+                            {/* FIX-28: proper fallback to "0.00" string not numeric 0 */}
+                            {(token.price_change_5m ?? 0) >= 0 ? '+' : ''}{token.price_change_5m?.toFixed(2) ?? '0.00'}% (5m)
                           </div>
                         </td>
                         <td className="p-4 text-right">

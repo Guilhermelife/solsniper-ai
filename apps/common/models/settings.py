@@ -65,6 +65,8 @@ class SystemSettings(Base):
     paper_trading_fee_pct: Mapped[float] = mapped_column(Float, default=0.25)
     paper_slippage_pct: Mapped[float] = mapped_column(Float, default=1.0)
     paper_default_take_profit_pct: Mapped[float] = mapped_column(Float, default=1000.0)
+    # NOTE: paper_default_stop_loss_pct is kept for historical UI compatibility.
+    # The active stop loss used by trader.py is stop_loss_pct above.
     paper_default_stop_loss_pct: Mapped[float] = mapped_column(Float, default=-50.0)
     
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,6 +1,7 @@
 import os
 import psutil
 import json
+from collections import deque
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from apps.common.database import get_db
@@ -14,16 +15,25 @@ router = APIRouter(prefix="/system", tags=["System"])
 def get_system_stats():
     cpu_percent = psutil.cpu_percent(interval=0.1)
     memory = psutil.virtual_memory()
-    disk = psutil.disk_usage('/')
-    
+
+    # FIX-23: Use os.path.abspath(os.sep) for cross-platform disk path (works on Windows and Linux)
+    disk_path = os.path.abspath(os.sep)
+    try:
+        disk = psutil.disk_usage(disk_path)
+        disk_info = {
+            "disk_usage_percent": disk.percent,
+            "disk_total_gb": round(disk.total / (1024**3), 2),
+            "disk_used_gb": round(disk.used / (1024**3), 2),
+        }
+    except Exception:
+        disk_info = {"disk_usage_percent": 0, "disk_total_gb": 0, "disk_used_gb": 0}
+
     return {
         "cpu_usage_percent": cpu_percent,
         "ram_usage_percent": memory.percent,
         "ram_total_gb": round(memory.total / (1024**3), 2),
         "ram_used_gb": round(memory.used / (1024**3), 2),
-        "disk_usage_percent": disk.percent,
-        "disk_total_gb": round(disk.total / (1024**3), 2),
-        "disk_used_gb": round(disk.used / (1024**3), 2)
+        **disk_info,
     }
 
 @router.get("/badges")
@@ -35,8 +45,8 @@ def get_sidebar_badges(db: Session = Depends(get_db)):
     settings = db.query(SystemSettings).first()
     max_open_positions = settings.max_open_positions if settings else 5
     
-    # 3. Pending Signals (now WATCHING in HFT mode)
-    pending_signals = db.query(Signal).filter(Signal.confirmation_status == "WATCHING").count()
+    # 3. Watching Signals (signals waiting for pullback re-entry — new HFT status)
+    watching_signals = db.query(Signal).filter(Signal.confirmation_status == "WATCHING").count()
     
     # 4. Scanned Tokens (Live Market)
     scanned_tokens = 0
@@ -48,19 +58,21 @@ def get_sidebar_badges(db: Session = Depends(get_db)):
     except Exception:
         pass
         
-    # 5. Error Logs
+    # 5. Error Logs — FIX-22: Read only the last 200 lines to avoid reading huge files
     error_warnings = 0
     try:
         if os.path.exists("logs/errors.log"):
             with open("logs/errors.log", "r", encoding="utf-8") as f:
-                error_warnings = sum(1 for line in f if line.strip())
+                # Read only last 200 lines efficiently
+                last_lines = deque(f, maxlen=200)
+                error_warnings = sum(1 for line in last_lines if line.strip())
     except Exception:
         pass
         
     return {
         "open_positions": open_positions,
         "max_open_positions": max_open_positions,
-        "pending_signals": pending_signals,
+        "pending_signals": watching_signals,
         "scanned_tokens": scanned_tokens,
         "error_warnings": error_warnings
     }

@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import tempfile
 import psutil
 import logging
 from logging.handlers import RotatingFileHandler
@@ -51,8 +52,9 @@ def run():
     scans_performed = 0
     tokens_analyzed = 0
     signals_generated = 0
-    last_snapshot_time = datetime.min
-    last_cleanup_time = datetime.min
+    # FIX-25: Initialize to a proper past time to avoid huge delta on first call
+    last_snapshot_time = datetime.utcnow() - timedelta(hours=24)
+    last_cleanup_time = datetime.utcnow() - timedelta(hours=24)
     
     try:
         while True:
@@ -75,13 +77,16 @@ def run():
             # Fetch new pairs
             try:
                 tokens = scan_tokens(sys_settings)
-                tokens_analyzed += len(tokens)
                 print(f"\nTokens scanned: {len(tokens)}")
                 logger.info(f"Scan cycle completed. Tokens: {len(tokens)}")
                 
-                # Dump for API
-                with open("logs/latest_scan.json", "w") as f:
-                    json.dump(tokens, f)
+                # FIX-05: Atomic write — prevents API from reading a truncated/empty file
+                try:
+                    with tempfile.NamedTemporaryFile('w', dir='logs', delete=False, suffix='.tmp') as tmp:
+                        json.dump(tokens, tmp)
+                    os.replace(tmp.name, 'logs/latest_scan.json')
+                except Exception as e:
+                    errors_logger.error(f"Error writing latest_scan.json: {e}")
             except Exception as e:
                 errors_logger.error(f"Error scanning tokens: {e}")
                 sleep_interval = sys_settings.scan_interval_seconds or 30
@@ -226,7 +231,7 @@ def run():
             recent_signals = db.query(Signal).filter(Signal.created_at >= last_24h).all()
             for sig in recent_signals:
                 current_price = live_prices.get(sig.token_address)
-                if current_price:
+                if current_price and sig.price_usd and sig.price_usd > 0:
                     age_hours = (datetime.utcnow() - sig.created_at).total_seconds() / 3600
                     
                     if age_hours <= 1.0:
@@ -238,6 +243,29 @@ def run():
                     if age_hours <= 24.0:
                         if not sig.peak_price_24h or current_price > sig.peak_price_24h:
                             sig.peak_price_24h = current_price
+                    
+                    # FIX-21: Update milestone fields — these were defined but never populated
+                    roi_pct = ((current_price - sig.price_usd) / sig.price_usd) * 100.0
+                    
+                    if roi_pct >= 10.0 and not sig.hit_10_pct:
+                        sig.hit_10_pct = True
+                        if not sig.time_to_10_pct:
+                            sig.time_to_10_pct = age_hours * 60  # store in minutes
+                    if roi_pct >= 20.0 and not sig.hit_20_pct:
+                        sig.hit_20_pct = True
+                        if not sig.time_to_20_pct:
+                            sig.time_to_20_pct = age_hours * 60
+                    if roi_pct >= 50.0 and not sig.hit_50_pct:
+                        sig.hit_50_pct = True
+                        if not sig.time_to_50_pct:
+                            sig.time_to_50_pct = age_hours * 60
+                    if roi_pct >= 100.0 and not sig.hit_100_pct:
+                        sig.hit_100_pct = True
+                        if not sig.time_to_100_pct:
+                            sig.time_to_100_pct = age_hours * 60
+                    # Detect rugpull: price dropped more than 70% from signal price
+                    if roi_pct <= -70.0 and not sig.did_rug:
+                        sig.did_rug = True
                             
             db.commit()
             
@@ -257,9 +285,10 @@ def run():
                     
                     if closed_positions:
                         last_closed = closed_positions[0]
-                        pullback_target = last_closed.highest_price * (1 + (sys_settings.pullback_pct / 100.0))
+                        # FIX-07: Use abs() so pullback works correctly regardless of sign
+                        pullback_target = last_closed.highest_price * (1 - (abs(sys_settings.pullback_pct) / 100.0))
                         
-                        if current_price <= pullback_target: # Price dropped to or below pullback target
+                        if current_price <= pullback_target:  # Price dropped to or below pullback target
                             sig.confirmation_status = "BUYING"
                             db.commit()
                             
@@ -326,10 +355,14 @@ def run():
             # Sort by Priority Score DESC
             analyzed_results.sort(key=lambda x: x.get("priority_score", 0), reverse=True)
             
-            # Dump to real-time cache for the Live Signals dashboard
+            # FIX-24: Count only tokens that actually passed price filter and were analyzed
+            tokens_analyzed += len(analyzed_results)
+
+            # FIX-05: Atomic write for live signals cache
             try:
-                with open("logs/live_signals.json", "w") as f:
-                    json.dump(analyzed_results, f)
+                with tempfile.NamedTemporaryFile('w', dir='logs', delete=False, suffix='.tmp') as tmp:
+                    json.dump(analyzed_results, tmp)
+                os.replace(tmp.name, 'logs/live_signals.json')
             except Exception as e:
                 errors_logger.error(f"Error dumping live signals: {e}")
             
@@ -388,11 +421,12 @@ def run():
                                     target_status = "REJECTED"
                                     reject_reason = "Re-entry Cooldown"
                                 else:
-                                    pullback_target = last_closed.highest_price * (1 + (sys_settings.pullback_pct / 100.0))
+                                    # FIX-07: Use abs() to normalize pullback_pct regardless of sign entered by user
+                                    pullback_target = last_closed.highest_price * (1 - (abs(sys_settings.pullback_pct) / 100.0))
                                     current_price = token.get("price_usd", 0)
                                     if current_price > pullback_target:
                                         target_status = "WATCHING"
-                                        reject_reason = f"Waiting for pullback to {pullback_target}"
+                                        reject_reason = f"Waiting for pullback to {pullback_target:.8f}"
                                     else:
                                         entry_reason = f"Re-Entry #{reentry_count} (Immediate)"
                                         
@@ -479,6 +513,7 @@ def run():
                     latest_signal.priority_score = result.get("priority_score", 0)
                     latest_signal.freshness_score = result.get("freshness_score", 0)
                     latest_signal.reason = result.get("reason")
+                    # FIX-01: updated_at is now a real column on Signal model
                     latest_signal.updated_at = datetime.utcnow()
                     db.commit()
 
@@ -552,26 +587,35 @@ def run():
                 json.dump(runtime_state, f)
                 
             # 6. Auto-Cleanup Snapshots (Every 1 hour)
-            if (now - last_cleanup_time).total_seconds() >= 3600:
+            # FIX-25: Use fresh datetime instead of loop-start 'now' to avoid drift
+            cleanup_now = datetime.utcnow()
+            if (cleanup_now - last_cleanup_time).total_seconds() >= 3600:
                 try:
-                    cutoff = now - timedelta(hours=24)
+                    cutoff = cleanup_now - timedelta(hours=24)
                     
                     # Fetch all tokens that the bot has ever bought (Open or Closed)
                     active_positions = db.query(Position.token_address).all()
                     active_addresses = [p[0] for p in active_positions]
                     
                     # Delete snapshots older than 24h where token was NEVER bought
-                    deleted = db.query(TokenSnapshot).filter(
-                        TokenSnapshot.timestamp < cutoff,
-                        ~TokenSnapshot.token_address.in_(active_addresses) if active_addresses else True
-                    ).delete(synchronize_session=False)
+                    # Note: when active_addresses is empty, we skip the filter entirely
+                    # to avoid accidentally deleting all snapshots
+                    if active_addresses:
+                        deleted = db.query(TokenSnapshot).filter(
+                            TokenSnapshot.timestamp < cutoff,
+                            ~TokenSnapshot.token_address.in_(active_addresses)
+                        ).delete(synchronize_session=False)
+                    else:
+                        deleted = db.query(TokenSnapshot).filter(
+                            TokenSnapshot.timestamp < cutoff
+                        ).delete(synchronize_session=False)
                     
                     db.commit()
                     logger.info(f"Auto-cleanup: Deleted {deleted} old snapshots")
                 except Exception as e:
                     errors_logger.error(f"Error during auto-cleanup: {e}")
                 finally:
-                    last_cleanup_time = now
+                    last_cleanup_time = cleanup_now
             
             # Sleep
             sleep_interval = sys_settings.scan_interval_seconds or 30
