@@ -43,7 +43,10 @@ class PaperTrader:
 
         # Check Max Wallet Exposure
         current_exposure = sum([p.amount_usd for p in open_positions])
-        max_allowed_exposure = self.wallet.current_balance * (sys_settings.max_wallet_exposure_pct / 100.0)
+        # FIX: exposure cap must be based on TOTAL portfolio value (free cash + invested),
+        # not just free cash — otherwise when invested > free cash, available = negative
+        total_portfolio_value = self.wallet.current_balance + current_exposure
+        max_allowed_exposure = total_portfolio_value * (sys_settings.max_wallet_exposure_pct / 100.0)
 
         # Calculate amount_usd based on mode
         amount_usd = sys_settings.default_position_size
