@@ -374,14 +374,19 @@ def run():
                 
                 if decision == "BUY_SIGNAL":
                     cooldown_dt = datetime.utcnow() - timedelta(hours=sys_settings.signal_cooldown_hours or 6.0)
-                    existing_buy = db.query(Signal).filter(
+                    
+                    # FIX: Only apply cooldown to signals that were ACTUALLY EXECUTED.
+                    # REJECTED signals (no capital, position limit) should NOT block re-entry.
+                    # The Live Radar shows BUY NOW → the bot must try again when capital is available.
+                    executed_buy = db.query(Signal).filter(
                         Signal.token_address == token["address"],
                         Signal.decision == "BUY_SIGNAL",
+                        Signal.confirmation_status.in_(["OPEN", "BUYING", "WATCHING"]),
                         Signal.created_at >= cooldown_dt
                     ).first()
                     
-                    if existing_buy:
-                        continue # Skip duplicate in cooldown
+                    if executed_buy:
+                        continue  # Already have an active position or watching this token
 
                     signals_generated += 1
                     print(f"\nSignal found (IMMEDIATE EXECUTION): {token['symbol']} | Priority: {result.get('priority_score', 0):.1f}")
